@@ -1,66 +1,144 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# AROStream
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Multi-tenant control panel for Icecast streaming stations. This repo includes the admin panel, tenant dashboard, and go-live workflow.
 
-## About Laravel
+## Requirements
+- PHP 8.2+
+- Composer
+- Node.js 18+ (optional for Vite build)
+- MySQL or SQLite
+- aaPanel (for production hosting on Contabo)
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Local Setup (Windows)
+```powershell
+cd d:\programing\laravel\arostream\AROStream_skel
+composer install
+copy .env.example .env
+php artisan key:generate
+php artisan migrate --seed
+php artisan serve
+```
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+Login:
+- admin@arosoft.io / password
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## Production on Contabo (aaPanel)
 
-## Learning Laravel
+### 1) Server Prep
+```bash
+sudo apt update
+sudo apt install -y curl unzip git
+```
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+### 2) Install aaPanel
+```bash
+curl -sSO http://www.aapanel.com/script/install_6.0_en.sh
+sudo bash install_6.0_en.sh
+```
+Open the aaPanel URL shown after install.
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+### 3) Create Site for Laravel
+In aaPanel:
+1. Website -> Add site
+2. Domain: `panel.bentechs.com` (or your control panel domain)
+3. Root: `/www/wwwroot/arostream`
+4. PHP version: 8.2
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+Upload your project to `/www/wwwroot/arostream` and run:
+```bash
+cd /www/wwwroot/arostream
+composer install --no-dev
+cp .env.example .env
+php artisan key:generate
+php artisan migrate --seed
+```
 
-## Laravel Sponsors
+Set correct permissions:
+```bash
+chown -R www:www /www/wwwroot/arostream
+chmod -R 775 /www/wwwroot/arostream/storage /www/wwwroot/arostream/bootstrap/cache
+```
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+### 4) aaPanel Nginx config (Laravel)
+Set site root to `/www/wwwroot/arostream/public`.
 
-### Premium Partners
+### 5) Queue + Scheduler (aaPanel)
+Use aaPanel -> Cron:
+- `* * * * * php /www/wwwroot/arostream/artisan schedule:run >> /dev/null 2>&1`
+- Queue worker: `php /www/wwwroot/arostream/artisan queue:work --sleep=3 --tries=3`
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[WebReinvent](https://webreinvent.com/)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Jump24](https://jump24.co.uk)**
-- **[Redberry](https://redberry.international/laravel/)**
-- **[Active Logic](https://activelogic.com)**
-- **[byte5](https://byte5.de)**
-- **[OP.GG](https://op.gg)**
+## Icecast Streaming Setup (Contabo + Cloudflare)
 
-## Contributing
+### 1) DNS (Cloudflare)
+Create A record:
+- Name: `stream`
+- Content: `95.111.234.34`
+- Proxy: **DNS only (gray cloud)**
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### 2) Install Icecast
+```bash
+sudo apt install -y icecast2
+```
+During install:
+- Enable Icecast: Yes
+- Hostname: `stream.bentechs.com`
+- Set source / relay / admin passwords
 
-## Code of Conduct
+### 3) Icecast config
+Edit `/etc/icecast2/icecast.xml`:
+```xml
+<hostname>stream.bentechs.com</hostname>
+<listen-socket>
+  <port>8000</port>
+</listen-socket>
+```
+Restart:
+```bash
+sudo systemctl restart icecast2
+sudo systemctl enable icecast2
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### 4) HTTPS on 443 (recommended)
+Use aaPanel Nginx reverse proxy:
+1. Create a new site `stream.bentechs.com`
+2. Enable SSL (Let's Encrypt)
+3. Add reverse proxy:
+   - Target: `http://127.0.0.1:8000`
 
-## Security Vulnerabilities
+### 5) Firewall
+```bash
+sudo ufw allow 22
+sudo ufw allow 80
+sudo ufw allow 443
+sudo ufw enable
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+### 6) Test Icecast
+Open:
+```
+https://stream.bentechs.com
+```
 
-## License
+## Configure the App for Streaming
+In Admin -> Settings:
+- Stream Public Host: `stream.bentechs.com`
+- Stream Port: `443`
+- Source Username: `source`
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+## Go Live (BUTT)
+Use the Go Live page for each station. Encoder values shown there should match:
+- Server: `stream.bentechs.com`
+- Port: `443`
+- Mount: `/live`
+- Username: `source`
+- Password: Icecast source password
+
+Public listener URL:
+```
+https://stream.bentechs.com/live
+```
+
+## Notes
+- Cloudflare proxy must be DNS-only for streaming.
+- If you change to `stream.radioetoil.com`, update DNS and app settings.
+- The web app is the control panel; Icecast handles audio streaming.
